@@ -2,7 +2,7 @@ import numpy as np
 import numpy.linalg as la
 
 from skimage.feature import corner_harris, corner_peaks, BRIEF, match_descriptors
-
+from skimage.transform import EssentialMatrixTransform
 
 def get_matched_keyppoints(imLgray, imRgray):
     """
@@ -15,7 +15,7 @@ def get_matched_keyppoints(imLgray, imRgray):
 
     extractor = BRIEF()
     extractor.extract(imLgray, keypointsL)
-    keypointsL = keypointsL[extractor.mask]         
+    keypointsL = keypointsL[extractor.mask]
     descriptorsL = extractor.descriptors
     extractor.extract(imRgray, keypointsR)
     keypointsR = keypointsR[extractor.mask]
@@ -23,7 +23,7 @@ def get_matched_keyppoints(imLgray, imRgray):
 
     matchesLR = match_descriptors(descriptorsL, descriptorsR, cross_check=True)
     print ('the number of matches is {:2d}'.format(matchesLR.shape[0]))
-    
+
     return keypointsL, keypointsR, matchesLR
 
 def matchedpoints_to_pairpoints(keypointsL, keypointsR, matchesLR):
@@ -32,7 +32,7 @@ def matchedpoints_to_pairpoints(keypointsL, keypointsR, matchesLR):
     returns two arrays where ptsL[i] and ptsR[i] are a pair of matched features in left and right image
     """
     ptsL = []
-    ptsR = [] 
+    ptsR = []
     for i in matchesLR:
         ptsL.append(keypointsL[i[0]])
         ptsR.append(keypointsR[i[1]])
@@ -56,14 +56,14 @@ def camera_calib_nomalization(pts, K):
 
 def get_epipolar_lines(n_ptsL, n_ptsR, E, K):
     """
-    Generate epipolar line equations in two images (y = ax + b) 
-    Given a list of matched uncalibrated points, essential matrix (E) between the two images and 
+    Generate epipolar line equations in two images (y = ax + b)
+    Given a list of matched uncalibrated points, essential matrix (E) between the two images and
     K (camera calibration parameters), return the epipolar line equations
     """
-    # reate an array of homogeneous normalized points sampled in image 1 
+    # reate an array of homogeneous normalized points sampled in image 1
     n_ptsL_homogeneous = np.column_stack((n_ptsL, np.ones(n_ptsL.shape[0])))
     n_ptsR_homogeneous = np.column_stack((n_ptsR, np.ones(n_ptsR.shape[0])))
-    # create an array of the corresponding (uncalibrated) epipolar lines in image 2 
+    # create an array of the corresponding (uncalibrated) epipolar lines in image 2
     n_epipolar_lines_im2 = np.matmul(E, n_ptsL_homogeneous.T)
     n_epipolar_lines_im1 = np.matmul(E.T, n_ptsR_homogeneous.T)
     # we know that the l in the uncalibrated coordinate, is given by K^(-T) l
@@ -76,14 +76,14 @@ def get_epipolar_lines(n_ptsL, n_ptsR, E, K):
     epipolar_b_im1 = -epipolar_lines_im1[:,2] / epipolar_lines_im1[:,1]
     epipolar_b_im2 = -epipolar_lines_im2[:,2] / epipolar_lines_im2[:,1]
     return epipolar_a_im1, epipolar_b_im1, epipolar_a_im2, epipolar_b_im2
-  
+
 def P_from_E(E):
     """
     Given an essential matrix E, return the possible projection matrices
     """
     Ue, Se, Ve = la.svd(E) # gives U, S and V^T
-    W = np.array([[0, -1, 0], 
-              [1,  0, 0], 
+    W = np.array([[0, -1, 0],
+              [1,  0, 0],
               [0,  0, 1]])
 
     R1 = np.matmul(Ue, np.matmul(W, Ve))
@@ -92,8 +92,8 @@ def P_from_E(E):
     T2 = -Ue[:, 2]
 
     # first camera matrix (used as referencee)
-    Pw = np.array([[1, 0, 0, 0], 
-                [0, 1, 0, 0], 
+    Pw = np.array([[1, 0, 0, 0],
+                [0, 1, 0, 0],
                 [0, 0, 1, 0]])
 
     # four possible matrices for the second camera
@@ -111,8 +111,8 @@ def Afrom2pts(xa, xb, E):
     of where the point is in the world coordinate
     """
     Ue, Se, Ve = la.svd(E) # gives U, S and V^T
-    W = np.array([[0, -1, 0], 
-              [1,  0, 0], 
+    W = np.array([[0, -1, 0],
+              [1,  0, 0],
               [0,  0, 1]])
 
     R1 = np.matmul(Ue, np.matmul(W, Ve))
@@ -121,8 +121,8 @@ def Afrom2pts(xa, xb, E):
     T2 = -Ue[:, 2]
 
     # first camera matrix (used as referencee)
-    Pw = np.array([[1, 0, 0, 0], 
-                [0, 1, 0, 0], 
+    Pw = np.array([[1, 0, 0, 0],
+                [0, 1, 0, 0],
                 [0, 0, 1, 0]])
 
     # four possible matrices for the second camera
@@ -132,24 +132,24 @@ def Afrom2pts(xa, xb, E):
     Pd = np.column_stack((R2, T2))
 
     # Each camera (projection matrix P) will define its own A
-    Aa = np.array([[Pw[0,0]-Pw[2,0]*xa[0], Pw[0,1]-Pw[2,1]*xa[0], Pw[0,2]-Pw[2,2]*xa[0], Pw[0,3]-Pw[2,3]*xa[0]], 
-                   [Pw[1,0]-Pw[2,0]*xa[1], Pw[1,1]-Pw[2,1]*xa[1], Pw[1,2]-Pw[2,2]*xa[1], Pw[1,3]-Pw[2,3]*xa[1]], 
-                   [Pa[0,0]-Pa[2,0]*xb[0], Pa[0,1]-Pa[2,1]*xb[0], Pa[0,2]-Pa[2,2]*xb[0], Pa[0,3]-Pa[2,3]*xb[0]], 
+    Aa = np.array([[Pw[0,0]-Pw[2,0]*xa[0], Pw[0,1]-Pw[2,1]*xa[0], Pw[0,2]-Pw[2,2]*xa[0], Pw[0,3]-Pw[2,3]*xa[0]],
+                   [Pw[1,0]-Pw[2,0]*xa[1], Pw[1,1]-Pw[2,1]*xa[1], Pw[1,2]-Pw[2,2]*xa[1], Pw[1,3]-Pw[2,3]*xa[1]],
+                   [Pa[0,0]-Pa[2,0]*xb[0], Pa[0,1]-Pa[2,1]*xb[0], Pa[0,2]-Pa[2,2]*xb[0], Pa[0,3]-Pa[2,3]*xb[0]],
                    [Pa[1,0]-Pa[2,0]*xb[1], Pa[1,1]-Pa[2,1]*xb[1], Pa[1,2]-Pa[2,2]*xb[1], Pa[1,3]-Pa[2,3]*xb[1]]])
 
-    Ab = np.array([[Pw[0,0]-Pw[2,0]*xa[0], Pw[0,1]-Pw[2,1]*xa[0], Pw[0,2]-Pw[2,2]*xa[0], Pw[0,3]-Pw[2,3]*xa[0]], 
-                   [Pw[1,0]-Pw[2,0]*xa[1], Pw[1,1]-Pw[2,1]*xa[1], Pw[1,2]-Pw[2,2]*xa[1], Pw[1,3]-Pw[2,3]*xa[1]], 
-                   [Pb[0,0]-Pb[2,0]*xb[0], Pb[0,1]-Pb[2,1]*xb[0], Pb[0,2]-Pb[2,2]*xb[0], Pb[0,3]-Pb[2,3]*xb[0]], 
+    Ab = np.array([[Pw[0,0]-Pw[2,0]*xa[0], Pw[0,1]-Pw[2,1]*xa[0], Pw[0,2]-Pw[2,2]*xa[0], Pw[0,3]-Pw[2,3]*xa[0]],
+                   [Pw[1,0]-Pw[2,0]*xa[1], Pw[1,1]-Pw[2,1]*xa[1], Pw[1,2]-Pw[2,2]*xa[1], Pw[1,3]-Pw[2,3]*xa[1]],
+                   [Pb[0,0]-Pb[2,0]*xb[0], Pb[0,1]-Pb[2,1]*xb[0], Pb[0,2]-Pb[2,2]*xb[0], Pb[0,3]-Pb[2,3]*xb[0]],
                    [Pb[1,0]-Pb[2,0]*xb[1], Pb[1,1]-Pb[2,1]*xb[1], Pb[1,2]-Pb[2,2]*xb[1], Pb[1,3]-Pb[2,3]*xb[1]]])
 
-    Ac = np.array([[Pw[0,0]-Pw[2,0]*xa[0], Pw[0,1]-Pw[2,1]*xa[0], Pw[0,2]-Pw[2,2]*xa[0], Pw[0,3]-Pw[2,3]*xa[0]], 
-                   [Pw[1,0]-Pw[2,0]*xa[1], Pw[1,1]-Pw[2,1]*xa[1], Pw[1,2]-Pw[2,2]*xa[1], Pw[1,3]-Pw[2,3]*xa[1]], 
-                   [Pc[0,0]-Pc[2,0]*xb[0], Pc[0,1]-Pc[2,1]*xb[0], Pc[0,2]-Pc[2,2]*xb[0], Pc[0,3]-Pc[2,3]*xb[0]], 
+    Ac = np.array([[Pw[0,0]-Pw[2,0]*xa[0], Pw[0,1]-Pw[2,1]*xa[0], Pw[0,2]-Pw[2,2]*xa[0], Pw[0,3]-Pw[2,3]*xa[0]],
+                   [Pw[1,0]-Pw[2,0]*xa[1], Pw[1,1]-Pw[2,1]*xa[1], Pw[1,2]-Pw[2,2]*xa[1], Pw[1,3]-Pw[2,3]*xa[1]],
+                   [Pc[0,0]-Pc[2,0]*xb[0], Pc[0,1]-Pc[2,1]*xb[0], Pc[0,2]-Pc[2,2]*xb[0], Pc[0,3]-Pc[2,3]*xb[0]],
                    [Pc[1,0]-Pc[2,0]*xb[1], Pc[1,1]-Pc[2,1]*xb[1], Pc[1,2]-Pc[2,2]*xb[1], Pc[1,3]-Pc[2,3]*xb[1]]])
 
-    Ad = np.array([[Pw[0,0]-Pw[2,0]*xa[0], Pw[0,1]-Pw[2,1]*xa[0], Pw[0,2]-Pw[2,2]*xa[0], Pw[0,3]-Pw[2,3]*xa[0]], 
-                   [Pw[1,0]-Pw[2,0]*xa[1], Pw[1,1]-Pw[2,1]*xa[1], Pw[1,2]-Pw[2,2]*xa[1], Pw[1,3]-Pw[2,3]*xa[1]], 
-                   [Pd[0,0]-Pd[2,0]*xb[0], Pd[0,1]-Pd[2,1]*xb[0], Pd[0,2]-Pd[2,2]*xb[0], Pd[0,3]-Pd[2,3]*xb[0]], 
+    Ad = np.array([[Pw[0,0]-Pw[2,0]*xa[0], Pw[0,1]-Pw[2,1]*xa[0], Pw[0,2]-Pw[2,2]*xa[0], Pw[0,3]-Pw[2,3]*xa[0]],
+                   [Pw[1,0]-Pw[2,0]*xa[1], Pw[1,1]-Pw[2,1]*xa[1], Pw[1,2]-Pw[2,2]*xa[1], Pw[1,3]-Pw[2,3]*xa[1]],
+                   [Pd[0,0]-Pd[2,0]*xb[0], Pd[0,1]-Pd[2,1]*xb[0], Pd[0,2]-Pd[2,2]*xb[0], Pd[0,3]-Pd[2,3]*xb[0]],
                    [Pd[1,0]-Pd[2,0]*xb[1], Pd[1,1]-Pd[2,1]*xb[1], Pd[1,2]-Pd[2,2]*xb[1], Pd[1,3]-Pd[2,3]*xb[1]]])
     return Aa, Ab, Ac, Ad
 
@@ -158,7 +158,7 @@ def generate_X_from_A(Aa, Ab, Ac, Ad):
     Since AX=0 gives 4 equations for 3 unknowns. Use least square to solve for X for each A.
     Gives the location of each point in the world coordinate system.
     """
-    # least squares for solving linear system A_{0:2} X_{0:2} = - A_3 
+    # least squares for solving linear system A_{0:2} X_{0:2} = - A_3
     Aa_02 = Aa[:,:3]       # the first 3 columns of 4x4 matrix A
     Aa_3  = Aa[:,3]        # the last column on 4x4 matrix A
     Ab_02 = Ab[:,:3]
@@ -199,5 +199,75 @@ def get_proj_pts(P1, P2, pts3D, K):
     # c. convert to regular (inhomogeneous) point
     ptsL_proj = ptsL_proj_homogeneous[:, :2] / ptsL_scale
     ptsR_proj = ptsR_proj_homogeneous[:, :2] / ptsR_scale
-    
+
     return ptsL_proj, ptsR_proj
+
+def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = ) :
+    """
+    Estimates a homography from src_pts to dst_pts using the UFL method.
+    K is the number of initial points to choose from
+    """
+    assert len(src_pts) == len(dst_pts)
+    num_pts = len(src_pts)
+
+    # Initial set of models
+    models = []
+
+    # Randomly choose K lines
+    for i in range(K) :
+        # Randomly choose 8 points
+        random_idx = np.random.choice(num_pts, 8, replace=False)
+        src_random = src_pts[random_idx]
+        dst_random = dst_pts[random_idx]
+        # Fit a homography through them
+        EMT = EssentialMatrixTransform()
+        if EMT.estimate(src_random, dst_random) :
+
+            models.append(EMT.params)
+            # print(np.diag(np.hstack((dst_random, np.ones((8,1)))) @ EMT.params @ np.vstack((src_random.T, np.ones(8)))))
+
+    # Remove duplicates in the initial set of models
+    models = np.unique(np.array(models), axis=0)
+
+    # Nearest model for each point
+    nearest_models = np.zeros(num_pts)-1
+    # Nearest distances for each point
+    distances = np.zeros(num_pts)+np.Inf
+
+    # Homogeneous coordinates
+    dst_hom = np.hstack((dst_pts  , np.ones((num_pts,1))))
+    src_hom = np.vstack((src_pts.T, np.ones(num_pts)))
+
+    # Find nearest model for each point
+    for i in range(len(models)) :
+        # Distances for each point to the current model
+        model_dists = np.diag(dst_hom @ models[i] @ src_hom)
+        # Update points where the current model has smaller distance
+        nearest_models[np.where(model_dists < distances and model_dists < T)] = i
+        # Update distances
+        distances = np.minimum(distances, model_dists)
+
+    print(distances)
+    print(nearest_models)
+
+    # num_models = len(models)
+    # # Convert the models into a numpy array where the models are vertically stacked
+    # Lambda = np.zeros((0,3))
+    # for L in models :
+    #     Lambda = np.vstack((Lambda, L))
+
+    # print(Lambda)
+    # print(Lambda @ np.vstack((src_pts[:2].T, np.ones(2))))
+
+    # # Row indexes models, column indexes points
+    # # Ex_src encodes E @ src_pts
+    # Ex_src = Lambda @ np.vstack((src_pts.T, np.ones(num_pts)))
+    # # Dest points but in homogeneous coordinates
+    # dst_hom = np.hstack((dst_pts, np.ones((num_pts,1))))
+    # # Duplicate the dst_hom horizontally for multiplication with Ex_src
+    # dst_hom_dup = np.tile(dst_hom, (1, num_models))
+    # print(Ex_src)
+    # print(dst_hom_dup)
+
+    # # Distance from each point to the respective lines
+    # # distances =
