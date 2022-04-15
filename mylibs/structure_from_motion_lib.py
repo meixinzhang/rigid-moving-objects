@@ -202,7 +202,7 @@ def get_proj_pts(P1, P2, pts3D, K):
 
     return ptsL_proj, ptsR_proj
 
-def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = ) :
+def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 1e-20) :
     """
     Estimates a homography from src_pts to dst_pts using the UFL method.
     K is the number of initial points to choose from
@@ -222,7 +222,6 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = ) :
         # Fit a homography through them
         EMT = EssentialMatrixTransform()
         if EMT.estimate(src_random, dst_random) :
-
             models.append(EMT.params)
             # print(np.diag(np.hstack((dst_random, np.ones((8,1)))) @ EMT.params @ np.vstack((src_random.T, np.ones(8)))))
 
@@ -243,12 +242,35 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = ) :
         # Distances for each point to the current model
         model_dists = np.diag(dst_hom @ models[i] @ src_hom)
         # Update points where the current model has smaller distance
-        nearest_models[np.where(model_dists < distances and model_dists < T)] = i
+        nearest_models[np.where((model_dists < distances) & (model_dists < T))] = i
         # Update distances
         distances = np.minimum(distances, model_dists)
 
-    print(distances)
-    print(nearest_models)
+    #print(distances)
+    #print(nearest_models)
+
+    # The list of resulting models
+    result_models = []
+    # Match each point to a model index. An index of -1 means outlier.
+    pts_to_models = np.zeros(num_pts)-1
+
+    # Readjust parameters for each model to better fit the inliers
+    for i in range(len(models)) :
+        # The inlier index
+        inlier_idx = np.where(nearest_models == i)[0]
+        # Skip if no inliers
+        if len(inlier_idx) < 8 :
+            continue
+        # Inlier points
+        src_inliers = src_pts[inlier_idx]
+        dst_inliers = dst_pts[inlier_idx]
+        # Make the model more precise by re-estimating using only the inliers
+        EMT = EssentialMatrixTransform()
+        if EMT.estimate(src_inliers, dst_inliers) :
+            pts_to_models[inlier_idx] = len(result_models)
+            result_models.append(EMT.params)
+
+    return result_models, pts_to_models
 
     # num_models = len(models)
     # # Convert the models into a numpy array where the models are vertically stacked
