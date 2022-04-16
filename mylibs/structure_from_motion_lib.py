@@ -213,7 +213,7 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 1e-20) :
     # Initial set of models
     models = []
 
-    # Randomly choose K lines
+    # 1. Randomly choose K lines
     for i in range(K) :
         # Randomly choose 8 points
         random_idx = np.random.choice(num_pts, 8, replace=False)
@@ -228,13 +228,13 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 1e-20) :
     # Remove duplicates in the initial set of models
     models = np.unique(np.array(models), axis=0)
 
-    # Nearest model for each point
+    # 2. Nearest model for each point
     nearest_models = np.zeros(num_pts)-1
     # Nearest distances for each point
     distances = np.zeros(num_pts)+np.Inf
 
     # Homogeneous coordinates
-    dst_hom = np.hstack((dst_pts  , np.ones((num_pts,1))))
+    dst_hom = np.hstack((dst_pts, np.ones((num_pts,1))))
     src_hom = np.vstack((src_pts.T, np.ones(num_pts)))
 
     # Find nearest model for each point
@@ -249,7 +249,7 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 1e-20) :
     #print(distances)
     #print(nearest_models)
 
-    # The list of resulting models
+    # 3. The list of resulting models
     result_models = []
     # Match each point to a model index. An index of -1 means outlier.
     pts_to_models = np.zeros(num_pts)-1
@@ -269,6 +269,34 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 1e-20) :
         if EMT.estimate(src_inliers, dst_inliers) :
             pts_to_models[inlier_idx] = len(result_models)
             result_models.append(EMT.params)
+
+    # 4. Iteration: decide whether or not to keep each model
+    for i in range(len(result_models)) :
+        # Points assigned to this model
+        model_src_pts = src_pts[np.where(pts_to_models == i)]
+        model_dst_pts = dst_pts[np.where(pts_to_models == i)]
+        # Distances for each point to this model
+        model_dists = np.diag(dst_hom @ result_models[i] @ src_hom)[np.where(pts_to_models == i)]
+        # The cost of keeping this model is the cost of assigning points
+        # to this model plus the maintenance gamma
+        keep_cost = np.sum(model_dists) + gamma
+        # Find the nearest model for each point excluding the current model
+        remove_model_dists = np.zeros(num_pts)+np.Inf
+        # Nearest model for each point after the current model is removed
+        remove_nearest_models = pts_to_models
+        for j in range(len(result_models)) :
+            # Skip if it's the current model under consideration
+            if j == i :
+                continue
+            dists = np.diag(dst_hom @ models[j] @ src_hom)
+            # Distances for each point to the model
+            remove_nearest_models[np.where(dists < remove_model_dists)] = j
+            remove_model_dists = np.minimum(remove_model_dists, dists)
+        # Cost of removing the model
+        remove_cost = np.sum(remove_model_dists[np.where(result_models == i)])
+        # Remove the model if the cost of keeping is greater
+        if remove_cost < keep_cost :
+            pts_to_models[np.where(pts_to_models) == i] = remove_nearest_models[np.where(pts_to_models) == i]
 
     return result_models, pts_to_models
 
