@@ -100,96 +100,100 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 1e-20) :
     # Remove duplicates in the initial set of models
     models = np.unique(np.array(models), axis=0)
 
-    # 2. Nearest model for each point
-    nearest_models = np.zeros(num_pts)-1
-    # Nearest distances for each point
-    distances = np.zeros(num_pts)+np.Inf
-
     # Homogeneous coordinates
     dst_hom = np.hstack((dst_pts, np.ones((num_pts,1))))
     src_hom = np.vstack((src_pts.T, np.ones(num_pts)))
 
-    # Find nearest model for each point
-    for i in range(len(models)) :
-        # Distances for each point to the current model
-        model_dists = np.diag(dst_hom @ models[i] @ src_hom)
-        # Update points where the current model has smaller distance
-        nearest_models[np.where((model_dists < distances) & (model_dists < T))] = i
-        # Update distances
-        distances = np.minimum(distances, model_dists)
+    # Iteration of steps 2 and 3
+    def iterate (models, pts_to_models = np.zeros(num_pts)-1) :
 
-    #print(distances)
-    #print(nearest_models)
+        # 2a. Nearest model for each point
+        nearest_models = np.zeros(num_pts)-1
+        # Nearest distances for each point
+        distances = np.zeros(num_pts)+np.Inf
 
-    # 3. The list of resulting models
-    result_models = []
-    # Match each point to a model index. An index of -1 means outlier.
-    pts_to_models = np.zeros(num_pts)-1
+        # Find nearest model for each point
+        for i in range(len(models)) :
+            # Distances for each point to the current model
+            model_dists = np.diag(dst_hom @ models[i] @ src_hom)
+            # Update points where the current model has smaller distance
+            nearest_models[np.where((model_dists < distances) & (model_dists < T))] = i
+            # Update distances
+            distances = np.minimum(distances, model_dists)
 
-    # Readjust parameters for each model to better fit the inliers
-    for i in range(len(models)) :
-        # The inlier index
-        inlier_idx = np.where(nearest_models == i)[0]
-        # Skip if no inliers
-        if len(inlier_idx) < 8 :
-            continue
-        # Inlier points
-        src_inliers = src_pts[inlier_idx]
-        dst_inliers = dst_pts[inlier_idx]
-        # Make the model more precise by re-estimating using only the inliers
-        EMT = EssentialMatrixTransform()
-        if EMT.estimate(src_inliers, dst_inliers) :
-            pts_to_models[inlier_idx] = len(result_models)
-            result_models.append(EMT.params)
+        # 2b. The list of resulting models
+        result_models = []
 
-    # 4. Iteration: decide whether or not to keep each model
-    for i in range(len(result_models)) :
-        # Points assigned to this model
-        model_src_pts = src_pts[np.where(pts_to_models == i)]
-        model_dst_pts = dst_pts[np.where(pts_to_models == i)]
-        # Distances for each point to this model
-        model_dists = np.diag(dst_hom @ result_models[i] @ src_hom)[np.where(pts_to_models == i)]
-        # The cost of keeping this model is the cost of assigning points
-        # to this model plus the maintenance gamma
-        keep_cost = np.sum(model_dists) + gamma
-        # Find the nearest model for each point excluding the current model
-        remove_model_dists = np.zeros(num_pts)+np.Inf
-        # Nearest model for each point after the current model is removed
-        remove_nearest_models = pts_to_models
-        for j in range(len(result_models)) :
-            # Skip if it's the current model under consideration
-            if j == i :
+        # Readjust parameters for each model to better fit the inliers
+        for i in range(len(models)) :
+            # The inlier index
+            inlier_idx = np.where(nearest_models == i)[0]
+            # Skip if no inliers
+            if len(inlier_idx) < 8 :
                 continue
-            dists = np.diag(dst_hom @ models[j] @ src_hom)
-            # Distances for each point to the model
-            remove_nearest_models[np.where(dists < remove_model_dists)] = j
-            remove_model_dists = np.minimum(remove_model_dists, dists)
-        # Cost of removing the model
-        remove_cost = np.sum(remove_model_dists[np.where(result_models == i)])
-        # Remove the model if the cost of keeping is greater
-        if remove_cost < keep_cost :
-            pts_to_models[np.where(pts_to_models) == i] = remove_nearest_models[np.where(pts_to_models) == i]
+            # Inlier points
+            src_inliers = src_pts[inlier_idx]
+            dst_inliers = dst_pts[inlier_idx]
+            # Make the model more precise by re-estimating using only the inliers
+            EMT = EssentialMatrixTransform()
+            if EMT.estimate(src_inliers, dst_inliers) :
+                pts_to_models[inlier_idx] = len(result_models)
+                result_models.append(EMT.params)
+
+        #print(len(result_models))
+
+        # 3. Decide whether or not to keep each model
+        for i in range(len(result_models)) :
+            # Points assigned to this model
+            model_src_pts = src_pts[np.where(pts_to_models == i)]
+            model_dst_pts = dst_pts[np.where(pts_to_models == i)]
+            # Distances for each point to this model
+            model_dists = np.diag(dst_hom @ result_models[i] @ src_hom)[np.where(pts_to_models == i)]
+            # The cost of keeping this model is the cost of assigning points
+            # to this model plus the maintenance gamma
+            keep_cost = np.sum(model_dists) + gamma
+            # Find the nearest model for each point excluding the current model
+            remove_model_dists = np.zeros(num_pts)+np.Inf
+            # Nearest model for each point after the current model is removed
+            remove_nearest_models = pts_to_models
+            for j in range(len(result_models)) :
+                # Skip if it's the current model under consideration
+                if j == i :
+                    continue
+                dists = np.diag(dst_hom @ models[j] @ src_hom)
+                # Distances for each point to the model
+                remove_nearest_models[np.where(dists < remove_model_dists)] = j
+                remove_model_dists = np.minimum(remove_model_dists, dists)
+            # Cost of removing the model
+            remove_cost = np.sum(remove_model_dists[np.where(result_models == i)])
+            # Remove the model if the cost of keeping is greater
+            if remove_cost < keep_cost :
+                pts_to_models[np.where(pts_to_models) == i] = remove_nearest_models[np.where(pts_to_models) == i]
+
+        # Calculate the energy of the current configuration
+        energy = 0
+        for i in range(len(result_models)) :
+            # Points assigned to this model
+            model_src_pts = src_pts[np.where(pts_to_models == i)]
+            model_dst_pts = dst_pts[np.where(pts_to_models == i)]
+            # Distances for each point to this model
+            model_dists = np.diag(dst_hom @ result_models[i] @ src_hom)[np.where(pts_to_models == i)]
+            # The cost of keeping this model is the cost of assigning points
+            # to this model plus the maintenance gamma
+            energy = energy + np.sum(model_dists) + gamma
+
+        return result_models, pts_to_models, energy
+
+    result_models, pts_to_models, energy = iterate(models)
+    print(f'energy = {energy}')
+    iter_num = 0
+    while iter_num < 1 :
+        iter_num = iter_num+1
+        result_models, pts_to_models, energy_update = iterate(result_models)
+        print(f'energy = {energy_update}, num classes = {len(np.unique(pts_to_models))}')
+        if energy_update == energy :
+            return result_models, pts_to_models
+        else :
+            energy = energy_update
 
     return result_models, pts_to_models
-
-    # num_models = len(models)
-    # # Convert the models into a numpy array where the models are vertically stacked
-    # Lambda = np.zeros((0,3))
-    # for L in models :
-    #     Lambda = np.vstack((Lambda, L))
-
-    # print(Lambda)
-    # print(Lambda @ np.vstack((src_pts[:2].T, np.ones(2))))
-
-    # # Row indexes models, column indexes points
-    # # Ex_src encodes E @ src_pts
-    # Ex_src = Lambda @ np.vstack((src_pts.T, np.ones(num_pts)))
-    # # Dest points but in homogeneous coordinates
-    # dst_hom = np.hstack((dst_pts, np.ones((num_pts,1))))
-    # # Duplicate the dst_hom horizontally for multiplication with Ex_src
-    # dst_hom_dup = np.tile(dst_hom, (1, num_models))
-    # print(Ex_src)
-    # print(dst_hom_dup)
-
-    # # Distance from each point to the respective lines
-    # # distances =
