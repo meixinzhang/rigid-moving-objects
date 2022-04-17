@@ -140,8 +140,6 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 1e-20) :
                 pts_to_models[inlier_idx] = len(result_models)
                 result_models.append(EMT.params)
 
-        #print(len(result_models))
-
         # 3. Decide whether or not to keep each model
         for i in range(len(result_models)) :
             # Points assigned to this model
@@ -168,7 +166,10 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 1e-20) :
             remove_cost = np.sum(remove_model_dists[np.where(result_models == i)])
             # Remove the model if the cost of keeping is greater
             if remove_cost < keep_cost :
-                pts_to_models[np.where(pts_to_models) == i] = remove_nearest_models[np.where(pts_to_models) == i]
+                # If after removing the model, the cost of a point to the next closest model
+                # is larger than T then set that point to be an outlier
+                pts_to_models[np.where((pts_to_models == i) & (remove_model_dists < T))] = remove_nearest_models[np.where((pts_to_models == i) & (remove_model_dists < T) )]
+                pts_to_models[np.where((pts_to_models == i) & (remove_model_dists >= T))] = -1
 
         # Calculate the energy of the current configuration
         energy = 0
@@ -187,7 +188,7 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 1e-20) :
     result_models, pts_to_models, energy = iterate(models)
     print(f'energy = {energy}')
     iter_num = 0
-    while iter_num < 1 :
+    while iter_num < 4 :
         iter_num = iter_num+1
         result_models, pts_to_models, energy_update = iterate(result_models)
         print(f'energy = {energy_update}, num classes = {len(np.unique(pts_to_models))}')
