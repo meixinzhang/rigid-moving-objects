@@ -74,7 +74,7 @@ def get_proj_pts(P1, P2, pts3D, K):
 
     return ptsL_proj, ptsR_proj
 
-def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 1e-20) :
+def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 5) :
     """
     Estimates a homography from src_pts to dst_pts using the UFL method.
     K is the number of initial points to choose from
@@ -105,17 +105,18 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 1e-20) :
     src_hom = np.vstack((src_pts.T, np.ones(num_pts)))
 
     # Iteration of steps 2 and 3
-    def iterate (models, pts_to_models = np.zeros(num_pts)-1) :
+    def iterate (models, pts_to_models = np.zeros(num_pts)-1, iter_num = None) :
 
         # 2a. Nearest model for each point
-        nearest_models = np.zeros(num_pts)-1
+        nearest_models = pts_to_models
         # Nearest distances for each point
         distances = np.zeros(num_pts)+np.Inf
 
         # Find nearest model for each point
         for i in range(len(models)) :
             # Distances for each point to the current model
-            model_dists = np.diag(dst_hom @ models[i] @ src_hom)
+            model_dists_vects = dst_hom - (models[i] @ src_hom).T
+            model_dists = model_dists_vects[:,0] ** 2 + model_dists_vects[:,1] ** 2 + model_dists_vects[:,2] ** 2
             # Update points where the current model has smaller distance
             nearest_models[np.where((model_dists < distances) & (model_dists < T))] = i
             # Update distances
@@ -124,10 +125,15 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 1e-20) :
         # 2b. The list of resulting models
         result_models = []
 
+        #if iter_num :
+        #    print(nearest_models)
+
         # Readjust parameters for each model to better fit the inliers
         for i in range(len(models)) :
             # The inlier index
             inlier_idx = np.where(nearest_models == i)[0]
+            #if iter_num :
+            #    print(inlier_idx)
             # Skip if no inliers
             if len(inlier_idx) < 8 :
                 continue
@@ -139,6 +145,8 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 1e-20) :
             if EMT.estimate(src_inliers, dst_inliers) :
                 pts_to_models[inlier_idx] = len(result_models)
                 result_models.append(EMT.params)
+
+        #print(len(result_models))
 
         # 3. Decide whether or not to keep each model
         for i in range(len(result_models)) :
@@ -158,10 +166,11 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 1e-20) :
                 # Skip if it's the current model under consideration
                 if j == i :
                     continue
-                dists = np.diag(dst_hom @ models[j] @ src_hom)
+                model_dists_j_vects = dst_hom - (models[j] @ src_hom).T
+                model_dists_j = model_dists_j_vects[:,0] ** 2 + model_dists_j_vects[:,1] ** 2 + model_dists_j_vects[:,2] ** 2
                 # Distances for each point to the model
-                remove_nearest_models[np.where(dists < remove_model_dists)] = j
-                remove_model_dists = np.minimum(remove_model_dists, dists)
+                remove_nearest_models[np.where(model_dists_j < remove_model_dists)] = j
+                remove_model_dists = np.minimum(remove_model_dists, model_dists_j)
             # Cost of removing the model
             remove_cost = np.sum(remove_model_dists[np.where(result_models == i)])
             # Remove the model if the cost of keeping is greater
@@ -178,7 +187,8 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 1e-20) :
             model_src_pts = src_pts[np.where(pts_to_models == i)]
             model_dst_pts = dst_pts[np.where(pts_to_models == i)]
             # Distances for each point to this model
-            model_dists = np.diag(dst_hom @ result_models[i] @ src_hom)[np.where(pts_to_models == i)]
+            model_dists_vects = dst_hom - (models[i] @ src_hom).T
+            model_dists = (model_dists_vects[:,0] ** 2 + model_dists_vects[:,1] ** 2 + model_dists_vects[:,2] ** 2)[np.where(pts_to_models == i)]
             # The cost of keeping this model is the cost of assigning points
             # to this model plus the maintenance gamma
             energy = energy + np.sum(model_dists) + gamma
@@ -186,11 +196,11 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 1e-20) :
         return result_models, pts_to_models, energy
 
     result_models, pts_to_models, energy = iterate(models)
-    print(f'energy = {energy}')
+    print(f'energy = {energy}, num classes = {len(np.unique(pts_to_models))}')
     iter_num = 0
-    while iter_num < 4 :
+    while iter_num >= 0 :
         iter_num = iter_num+1
-        result_models, pts_to_models, energy_update = iterate(result_models)
+        result_models, pts_to_models, energy_update = iterate(result_models, pts_to_models, iter_num = iter_num)
         print(f'energy = {energy_update}, num classes = {len(np.unique(pts_to_models))}')
         if energy_update == energy :
             return result_models, pts_to_models
