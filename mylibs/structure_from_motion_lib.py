@@ -74,7 +74,7 @@ def get_proj_pts(P1, P2, pts3D, K):
 
     return ptsL_proj, ptsR_proj
 
-def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 5) :
+def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 20) :
     """
     Estimates a homography from src_pts to dst_pts using the UFL method.
     K is the number of initial points to choose from
@@ -108,19 +108,30 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 5) :
     def iterate (models, pts_to_models = np.zeros(num_pts)-1, iter_num = None) :
 
         # 2a. Nearest model for each point
-        nearest_models = pts_to_models
+        nearest_models = np.zeros(num_pts)-1
         # Nearest distances for each point
         distances = np.zeros(num_pts)+np.Inf
+
+        if iter_num :
+            print(f'iter_num = {iter_num}')
+
+        if iter_num :
+            print(f'models = {models}')
+            #print(f'nearest_models = {nearest_models}')
 
         # Find nearest model for each point
         for i in range(len(models)) :
             # Distances for each point to the current model
-            model_dists_vects = dst_hom - (models[i] @ src_hom).T
-            model_dists = model_dists_vects[:,0] ** 2 + model_dists_vects[:,1] ** 2 + model_dists_vects[:,2] ** 2
+            model_dists = np.linalg.norm(dst_hom - (models[i] @ src_hom).T, axis=1)
             # Update points where the current model has smaller distance
             nearest_models[np.where((model_dists < distances) & (model_dists < T))] = i
             # Update distances
             distances = np.minimum(distances, model_dists)
+
+        if iter_num :
+            print(f'After finding nearest model for each point...')
+            print(f'nearest_models = {nearest_models}')
+            print(f'model_dists = {model_dists}')
 
         # 2b. The list of resulting models
         result_models = []
@@ -136,6 +147,8 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 5) :
             #    print(inlier_idx)
             # Skip if no inliers
             if len(inlier_idx) < 8 :
+                if iter_num :
+                    print(f'Less than 8 inliers for model {i}, skipping...')
                 continue
             # Inlier points
             src_inliers = src_pts[inlier_idx]
@@ -147,17 +160,22 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 5) :
                 result_models.append(EMT.params)
 
         #print(len(result_models))
+        print(f're-estimated result_models = {result_models}')
+        print(f'pts_to_models = {pts_to_models}')
 
         # 3. Decide whether or not to keep each model
         for i in range(len(result_models)) :
+            print('----------')
             # Points assigned to this model
+            print(f'inlier points index for model {i} is {np.where(pts_to_models == i)}')
             model_src_pts = src_pts[np.where(pts_to_models == i)]
             model_dst_pts = dst_pts[np.where(pts_to_models == i)]
             # Distances for each point to this model
-            model_dists = np.diag(dst_hom @ result_models[i] @ src_hom)[np.where(pts_to_models == i)]
+            model_dists = np.linalg.norm(dst_hom - (models[i] @ src_hom).T, axis=1)[np.where(pts_to_models == i)]
             # The cost of keeping this model is the cost of assigning points
             # to this model plus the maintenance gamma
             keep_cost = np.sum(model_dists) + gamma
+            print(f'cost to keep model {i} is {keep_cost}')
             # Find the nearest model for each point excluding the current model
             remove_model_dists = np.zeros(num_pts)+np.Inf
             # Nearest model for each point after the current model is removed
@@ -166,8 +184,7 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 5) :
                 # Skip if it's the current model under consideration
                 if j == i :
                     continue
-                model_dists_j_vects = dst_hom - (models[j] @ src_hom).T
-                model_dists_j = model_dists_j_vects[:,0] ** 2 + model_dists_j_vects[:,1] ** 2 + model_dists_j_vects[:,2] ** 2
+                model_dists_j = np.linalg.norm(dst_hom - (models[j] @ src_hom).T, axis=1)
                 # Distances for each point to the model
                 remove_nearest_models[np.where(model_dists_j < remove_model_dists)] = j
                 remove_model_dists = np.minimum(remove_model_dists, model_dists_j)
@@ -187,8 +204,7 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 5) :
             model_src_pts = src_pts[np.where(pts_to_models == i)]
             model_dst_pts = dst_pts[np.where(pts_to_models == i)]
             # Distances for each point to this model
-            model_dists_vects = dst_hom - (models[i] @ src_hom).T
-            model_dists = (model_dists_vects[:,0] ** 2 + model_dists_vects[:,1] ** 2 + model_dists_vects[:,2] ** 2)[np.where(pts_to_models == i)]
+            model_dists = np.linalg.norm(dst_hom - (models[i] @ src_hom).T, axis=1)[np.where(pts_to_models == i)]
             # The cost of keeping this model is the cost of assigning points
             # to this model plus the maintenance gamma
             energy = energy + np.sum(model_dists) + gamma
@@ -197,11 +213,20 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 5) :
 
     result_models, pts_to_models, energy = iterate(models)
     print(f'energy = {energy}, num classes = {len(np.unique(pts_to_models))}')
+    print(f'result_models')
+    print(result_models)
+    print(f'pts_to_models')
+    print(pts_to_models)
     iter_num = 0
     while iter_num >= 0 :
+        print('====================================================================================================')
         iter_num = iter_num+1
         result_models, pts_to_models, energy_update = iterate(result_models, pts_to_models, iter_num = iter_num)
         print(f'energy = {energy_update}, num classes = {len(np.unique(pts_to_models))}')
+        print(f'result_models = ')
+        print(result_models)
+        print(f'pts_to_models = ')
+        print(pts_to_models)
         if energy_update == energy :
             return result_models, pts_to_models
         else :
