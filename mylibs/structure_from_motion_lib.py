@@ -95,7 +95,6 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 20) :
         EMT = EssentialMatrixTransform()
         if EMT.estimate(src_random, dst_random) :
             models.append(EMT.params)
-            # print(np.diag(np.hstack((dst_random, np.ones((8,1)))) @ EMT.params @ np.vstack((src_random.T, np.ones(8)))))
 
     # Remove duplicates in the initial set of models
     models = np.unique(np.array(models), axis=0)
@@ -136,17 +135,18 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 20) :
         # 2b. The list of resulting models
         result_models = []
 
-        #if iter_num :
-        #    print(nearest_models)
+        # Map each model to its list of points
+        model_pts_masks = []
 
         # Readjust parameters for each model to better fit the inliers
         for i in range(len(models)) :
             # The inlier index
-            inlier_idx = np.where(nearest_models == i)[0]
+            inlier_idx = np.where(nearest_models == i)
             #if iter_num :
             #    print(inlier_idx)
             # Skip if no inliers
-            if len(inlier_idx) < 8 :
+            if len(inlier_idx[0]) < 8 :
+                pts_to_models[inlier_idx] = -1
                 if iter_num :
                     print(f'Less than 8 inliers for model {i}, skipping...')
                 continue
@@ -157,21 +157,30 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 20) :
             EMT = EssentialMatrixTransform()
             if EMT.estimate(src_inliers, dst_inliers) :
                 pts_to_models[inlier_idx] = len(result_models)
+                print(f'Setting points {inlier_idx} to have model {len(result_models)}')
                 result_models.append(EMT.params)
+                model_pts_masks.append(inlier_idx)
+            else :
+                print('re-estiamte failed')
+                pts_to_models[inlier_idx] = -1
 
         #print(len(result_models))
-        print(f're-estimated result_models = {result_models}')
+        #print(f're-estimated result_models = {result_models}')
         print(f'pts_to_models = {pts_to_models}')
 
         # 3. Decide whether or not to keep each model
         for i in range(len(result_models)) :
             print('----------')
             # Points assigned to this model
-            print(f'inlier points index for model {i} is {np.where(pts_to_models == i)}')
-            model_src_pts = src_pts[np.where(pts_to_models == i)]
-            model_dst_pts = dst_pts[np.where(pts_to_models == i)]
+            model_pts_mask = model_pts_masks[i]
+            print(f'inlier points index for model {i} is {model_pts_mask}')
+            # Sanity check
+            assert len(model_pts_mask[0]) >= 8, f"Less than 8 inliers for model {i}"
+            model_src_pts = src_pts[model_pts_mask]
+            model_dst_pts = dst_pts[model_pts_mask]
             # Distances for each point to this model
-            model_dists = np.linalg.norm(dst_hom - (models[i] @ src_hom).T, axis=1)[np.where(pts_to_models == i)]
+            model_dists = np.linalg.norm(dst_hom - (models[i] @ src_hom).T, axis=1)[model_pts_mask]
+            print(f'inlier to model distances = {model_dists}')
             # The cost of keeping this model is the cost of assigning points
             # to this model plus the maintenance gamma
             keep_cost = np.sum(model_dists) + gamma
@@ -189,13 +198,15 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 20) :
                 remove_nearest_models[np.where(model_dists_j < remove_model_dists)] = j
                 remove_model_dists = np.minimum(remove_model_dists, model_dists_j)
             # Cost of removing the model
-            remove_cost = np.sum(remove_model_dists[np.where(result_models == i)])
+            remove_cost = np.sum(remove_model_dists[model_pts_mask])
+            #print(f'distances to nearest model after removing model {i} = ')
+            #print(remove_model_dists)
+            print(f'cost to remove model {i} is {remove_cost}')
             # Remove the model if the cost of keeping is greater
             if remove_cost < keep_cost :
-                # If after removing the model, the cost of a point to the next closest model
-                # is larger than T then set that point to be an outlier
-                pts_to_models[np.where((pts_to_models == i) & (remove_model_dists < T))] = remove_nearest_models[np.where((pts_to_models == i) & (remove_model_dists < T) )]
-                pts_to_models[np.where((pts_to_models == i) & (remove_model_dists >= T))] = -1
+                print(f'remove model {i}')
+                pts_to_models[model_pts_mask] = remove_nearest_models[model_pts_mask]
+                print(f'pts_to_models = {pts_to_models}')
 
         # Calculate the energy of the current configuration
         energy = 0
