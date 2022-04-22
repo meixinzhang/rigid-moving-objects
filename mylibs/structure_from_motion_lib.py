@@ -74,7 +74,7 @@ def get_proj_pts(P1, P2, pts3D, K):
 
     return ptsL_proj, ptsR_proj
 
-def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 20) :
+def estimate_ufl(src_pts, dst_pts, K = 100, gamma = 0.01, T = 1):
     """
     Estimates a homography from src_pts to dst_pts using the UFL method.
     K is the number of initial points to choose from
@@ -88,14 +88,13 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 20) :
     # 1. Randomly choose K lines
     for i in range(K) :
         # Randomly choose 8 points
-        random_idx = np.random.choice(num_pts, 8, replace=False)
+        random_idx = np.random.choice(num_pts, 8, replace=True)
         src_random = src_pts[random_idx]
         dst_random = dst_pts[random_idx]
         # Fit a homography through them
         EMT = EssentialMatrixTransform()
         if EMT.estimate(src_random, dst_random) :
             models.append(EMT.params)
-
     # Remove duplicates in the initial set of models
     models = np.unique(np.array(models), axis=0)
 
@@ -104,8 +103,7 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 20) :
     src_hom = np.vstack((src_pts.T, np.ones(num_pts)))
 
     # Iteration of steps 2 and 3
-    def iterate (models, pts_to_models = np.zeros(num_pts)-1, iter_num = None) :
-
+    def iterate(models, pts_to_models = np.zeros(num_pts)-1, iter_num = None):
         # 2a. Nearest model for each point
         nearest_models = np.zeros(num_pts)-1
         # Nearest distances for each point
@@ -113,8 +111,6 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 20) :
 
         if iter_num :
             print(f'iter_num = {iter_num}')
-
-        if iter_num :
             print(f'models = {models}')
             #print(f'nearest_models = {nearest_models}')
 
@@ -139,11 +135,9 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 20) :
         model_pts_masks = []
 
         # Readjust parameters for each model to better fit the inliers
-        for i in range(len(models)) :
+        for i in range(len(models)):
             # The inlier index
             inlier_idx = np.where(nearest_models == i)
-            #if iter_num :
-            #    print(inlier_idx)
             # Skip if no inliers
             if len(inlier_idx[0]) < 8 :
                 pts_to_models[inlier_idx] = -1
@@ -169,15 +163,13 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 20) :
         print(f'pts_to_models = {pts_to_models}')
 
         # 3. Decide whether or not to keep each model
-        for i in range(len(result_models)) :
+        for i in range(len(result_models)):
             print('----------')
             # Points assigned to this model
             model_pts_mask = model_pts_masks[i]
             print(f'inlier points index for model {i} is {model_pts_mask}')
             # Sanity check
             assert len(model_pts_mask[0]) >= 8, f"Less than 8 inliers for model {i}"
-            model_src_pts = src_pts[model_pts_mask]
-            model_dst_pts = dst_pts[model_pts_mask]
             # Distances for each point to this model
             model_dists = np.linalg.norm(dst_hom - (models[i] @ src_hom).T, axis=1)[model_pts_mask]
             print(f'inlier to model distances = {model_dists}')
@@ -195,7 +187,7 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 20) :
                     continue
                 model_dists_j = np.linalg.norm(dst_hom - (models[j] @ src_hom).T, axis=1)
                 # Distances for each point to the model
-                remove_nearest_models[np.where(model_dists_j < remove_model_dists)] = j
+                remove_nearest_models[np.intersect1d(np.where(model_dists_j < remove_model_dists)[0], model_pts_mask[0])] = j
                 remove_model_dists = np.minimum(remove_model_dists, model_dists_j)
             # Cost of removing the model
             remove_cost = np.sum(remove_model_dists[model_pts_mask])
@@ -211,9 +203,6 @@ def estimate_ufl (src_pts, dst_pts, K = 100, gamma = 0.01, T = 20) :
         # Calculate the energy of the current configuration
         energy = 0
         for i in range(len(result_models)) :
-            # Points assigned to this model
-            model_src_pts = src_pts[np.where(pts_to_models == i)]
-            model_dst_pts = dst_pts[np.where(pts_to_models == i)]
             # Distances for each point to this model
             model_dists = np.linalg.norm(dst_hom - (models[i] @ src_hom).T, axis=1)[np.where(pts_to_models == i)]
             # The cost of keeping this model is the cost of assigning points
